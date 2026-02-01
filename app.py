@@ -175,6 +175,25 @@ def update_events() -> str:
         return f"⚠️ 一部エラー: {msg1 or msg2}"
 
 
+def train_fx_model() -> str:
+    """FXモデル学習を実行（自動判定付き）"""
+    # 自動学習スクリプトを使用（再学習判定あり）
+    # モデル学習は時間がかかる可能性があるため、タイムアウトを延長
+    success, msg = run_job("auto_train_model", [
+        "--pair", "USDJPY",
+        "--features-tf", "M5",
+        "--force"  # LINE Botから実行時は強制学習
+    ], timeout=1800)  # 30分タイムアウト
+    
+    if success:
+        return f"✅ モデル学習完了\n\n{msg}\n\nモデル保存先: models/fx_usdjpy_model.pkl"
+    else:
+        # タイムアウトの場合は別メッセージ
+        if "timeout" in msg.lower():
+            return "⚠️ モデル学習がタイムアウトしました（30分）。データ量が多い場合は時間がかかります。\n\nバックグラウンドで実行するか、データ量を減らして再試行してください。"
+        return f"⚠️ モデル学習エラー: {msg}"
+
+
 @app.route("/callback", methods=["POST"])
 def callback():
     """LINE Webhook"""
@@ -248,6 +267,12 @@ def handle_message(event):
         
         if cmd == "update_events":
             result = update_events()
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
+            return
+        
+        if cmd == "train_model" or cmd == "モデル学習":
+            # モデル学習を実行（バックグラウンド推奨）
+            result = train_fx_model()
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
             return
         
