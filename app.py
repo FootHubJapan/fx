@@ -236,13 +236,14 @@ def handle_message(event):
             help_text = """📋 利用可能なコマンド
 
 • 分析 - USDJPYの最新分析結果を表示
-• 予測 - 売買予測を表示
+• 予測 - AIによる高精度予測を表示
 • データ更新 - Dukascopyから最新データを取得
 • イベント更新 - 経済指標・要人発言を更新
+• モデル学習 - 高精度分析モデルを学習・更新
 
-例: 「分析」「データ更新して」
+例: 「分析」「データ更新して」「モデル学習」
 
-💡 その他のメッセージはネイティブAIが回答します"""
+💡 その他のメッセージはFX分析AIエージェントが回答します"""
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
             return
         
