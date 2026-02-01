@@ -12,13 +12,21 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from dotenv import load_dotenv
 
-# ネイティブAI呼び出しモジュール
+# FX分析AIエージェント（高精度分析モデル）
 try:
-    from native_ai import call_native_ai, call_native_ai_with_fx_context
+    from fx_ai_agent import analyze_fx, create_fx_agent
+    FX_AI_AGENT_AVAILABLE = True
+except ImportError:
+    FX_AI_AGENT_AVAILABLE = False
+    print("[WARN] fx_ai_agent module not found. FX AI features will be disabled.")
+
+# 外部ネイティブAI呼び出しモジュール（オプション）
+try:
+    from native_ai import call_native_ai
     NATIVE_AI_AVAILABLE = True
 except ImportError:
     NATIVE_AI_AVAILABLE = False
-    print("[WARN] native_ai module not found. Native AI features will be disabled.")
+    print("[WARN] native_ai module not found. External native AI features will be disabled.")
 
 load_dotenv()
 
@@ -225,8 +233,11 @@ def handle_message(event):
             return
         
         if cmd == "predict":
-            # 予測機能（簡易版）
-            result = analyze_usdjpy() + "\n\n💹 予測: 分析結果を確認してください"
+            # 高精度予測機能（AIエージェント使用）
+            if FX_AI_AGENT_AVAILABLE:
+                result = analyze_fx(text, pair="USDJPY")
+            else:
+                result = analyze_usdjpy() + "\n\n💹 予測: 分析結果を確認してください"
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
             return
         
@@ -240,52 +251,61 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
             return
         
-        # コマンドが一致しない場合: ネイティブAIに投げる
+        # コマンドが一致しない場合: FX分析AIエージェントまたは外部ネイティブAIに投げる
+        # 優先順位: 1) FX分析AIエージェント（このプロジェクト内） 2) 外部ネイティブAI
+        
+        # 1. FX分析AIエージェント（推奨・高精度分析）
+        if FX_AI_AGENT_AVAILABLE:
+            try:
+                # FX関連の質問かどうかを簡易判定
+                fx_keywords = ["ドル円", "USDJPY", "USD/JPY", "為替", "FX", "相場", "価格", "予測", "分析", 
+                              "買い", "売り", "上昇", "下落", "トレンド", "チャート"]
+                is_fx_question = any(kw in text for kw in fx_keywords)
+                
+                if is_fx_question:
+                    # FX分析AIエージェントで回答
+                    ai_reply = analyze_fx(text, pair="USDJPY")
+                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
+                    return
+            except Exception as e:
+                print(f"[ERROR] FX AI Agent failed: {e}")
+                # フォールバック処理に続く
+        
+        # 2. 外部ネイティブAI（NATIVE_AI_URLが設定されている場合）
         if NATIVE_AI_AVAILABLE and os.getenv("NATIVE_AI_URL"):
             try:
-                # context に何を入れるか（必要に応じてカスタマイズ）
-                # 例: ユーザーID、通貨ペア固定文、簡易プロフィール、直近の分析結果など
+                # FX分析データをcontextに含める
                 context = None
+                try:
+                    features_path = Path("data/features/USDJPY/M5_features.parquet")
+                    if features_path.exists():
+                        import pandas as pd
+                        df = pd.read_parquet(features_path)
+                        latest = df.iloc[-1] if not df.empty else None
+                        if latest is not None:
+                            context = f"FX分析コンテキスト: RSI={latest.get('rsi_14', 'N/A'):.2f}, ATR={latest.get('atr_14', 'N/A'):.4f}, 価格={latest.get('close', 'N/A'):.2f}"
+                except Exception:
+                    pass  # FXデータ取得失敗は無視
                 
-                # オプション: FX分析データをcontextに含める場合
-                # try:
-                #     features_path = Path("data/features/USDJPY/M5_features.parquet")
-                #     if features_path.exists():
-                #         import pandas as pd
-                #         df = pd.read_parquet(features_path)
-                #         latest = df.iloc[-1] if not df.empty else None
-                #         if latest is not None:
-                #             context = f"FX分析コンテキスト: RSI={latest.get('rsi_14', 'N/A')}, ATR={latest.get('atr_14', 'N/A')}"
-                # except Exception:
-                #     pass  # FXデータ取得失敗は無視
-                
-                # ネイティブAIを呼び出す
+                # 外部ネイティブAIを呼び出す
                 ai_reply = call_native_ai(text, context=context)
-                
-                # エラー時の処理: A) エラーメッセージをそのまま返す（現在の実装）
-                # B) 一般化したメッセージにしたい場合は以下をコメントアウトして、下のB案を使用
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
-                
-                # B案: エラーを一般化する場合（コメントアウト解除して使用）
-                # if ai_reply.startswith("⚠️") or "失敗" in ai_reply or "エラー" in ai_reply:
-                #     line_bot_api.reply_message(
-                #         event.reply_token,
-                #         TextSendMessage(text="申し訳ございません。現在AIが混み合っております。しばらくしてから再度お試しください。")
-                #     )
-                # else:
-                #     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
-                
                 return
             except Exception as e:
-                print(f"[ERROR] Native AI call failed: {e}")
-                # フォールバック: デフォルトメッセージ
-                line_bot_api.reply_message(
-                    event.reply_token,
-                    TextSendMessage(text="⚠️ AI応答の取得に失敗しました。コマンド（例: 「ヘルプ」）を試してください。")
-                )
-                return
+                print(f"[ERROR] External Native AI call failed: {e}")
+                # フォールバック処理に続く
         
-        # デフォルト（ネイティブAI未設定の場合）
+        # 3. デフォルト（AI未設定の場合）
+        if FX_AI_AGENT_AVAILABLE:
+            # FX分析AIエージェントで一般的な分析を返す
+            try:
+                result = analyze_fx("現在の相場状況を教えて", pair="USDJPY")
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
+                return
+            except Exception:
+                pass
+        
+        # 最終フォールバック
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="コマンドが認識できませんでした。「ヘルプ」と送ってください。")
@@ -335,6 +355,7 @@ def index():
             "/": "This page"
         },
         "line_enabled": line_bot_api is not None,
+        "fx_ai_agent_enabled": FX_AI_AGENT_AVAILABLE,
         "native_ai_enabled": NATIVE_AI_AVAILABLE and bool(os.getenv("NATIVE_AI_URL"))
     }
 
