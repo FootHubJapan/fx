@@ -17,18 +17,32 @@ def parse_bi5(path: Path, price_scale: int) -> pd.DataFrame:
     """Parse .bi5 file to tick DataFrame"""
     parts = path.parts
     hour = int(path.name.split("h_")[0])
-    year = int(parts[-5])
-    month0 = int(parts[-4])  # 00-11
-    day = int(parts[-3])
+    # パス構造: data/raw_bi5/USDJPY/2026/00/27/10h_ticks.bi5
+    # parts[-4] = 年, parts[-3] = 月(00-11), parts[-2] = 日
+    year = int(parts[-4])
+    month0 = int(parts[-3])  # 00-11
+    day = int(parts[-2])
     base = datetime(year, month0 + 1, day, hour, 0, 0, tzinfo=timezone.utc)
 
     try:
-        buf = lzma.open(path, "rb").read()
+        with lzma.open(path, "rb") as f:
+            buf = f.read()
+        if not buf:
+            print(f"[WARN] Empty file: {path}")
+            return pd.DataFrame()
     except Exception as e:
         print(f"[ERROR] Failed to read {path}: {e}")
+        import traceback
+        traceback.print_exc()
         return pd.DataFrame()
 
     rows = []
+    record_count = len(buf) // RECORD.size
+    if record_count == 0:
+        print(f"[WARN] No records in {path}")
+        return pd.DataFrame()
+    
+    print(f"[DEBUG] Processing {record_count} records from {path.name}")
     for off in range(0, len(buf), RECORD.size):
         if off + RECORD.size > len(buf):
             break
@@ -38,7 +52,8 @@ def parse_bi5(path: Path, price_scale: int) -> pd.DataFrame:
             ask = ask_i / price_scale
             bid = bid_i / price_scale
             rows.append((ts, bid, ask, float(bid_v), float(ask_v)))
-        except Exception:
+        except Exception as e:
+            print(f"[WARN] Failed to unpack record at offset {off}: {e}")
             continue
 
     if not rows:

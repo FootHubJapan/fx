@@ -4,6 +4,8 @@ services:
     env: python
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    # 注意: 起動時にデータを自動生成する場合は、以下に変更:
+    # startCommand: bash start_render.sh
     envVars:
       - key: LINE_CHANNEL_ACCESS_TOKEN
         sync: false

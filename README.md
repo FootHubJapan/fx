@@ -4,7 +4,7 @@ USDJPYを中心としたFX分析システムとLINEボット連携。
 
 ## 機能
 
-- **データ収集**: Dukascopyからティックデータを自動取得
+- **データ収集**: 複数データソース対応（Dukascopy、Yahoo Finance、OANDA）
 - **バー生成**: M1/M5/H1/D1/1M/6Mなど全時間足を自動生成
 - **特徴量生成**: テクニカル指標 + ファンダメンタル（経済指標・要人発言）
 - **高精度分析AI**: LightGBMベースの機械学習モデルによる予測分析
@@ -81,6 +81,8 @@ python app.py
 
 データ分析機能を使う場合は、以下のジョブを実行：
 
+**方法A: 既存のDukascopyパイプライン（推奨）**
+
 ```bash
 # データ取得（1日分）
 python jobs/download_bi5.py --pair USDJPY --start 2025-01-01T00 --end 2025-01-02T00
@@ -97,8 +99,28 @@ python jobs/fetch_rss_events.py --events-cache data/events/events_cache.parquet
 
 # 特徴量生成
 python jobs/build_features.py --bars data/bars/USDJPY/tf=M5/all.parquet --out data/features/USDJPY/M5_features.parquet --events-cache data/events/events_cache.parquet
+```
 
-# 高精度分析モデル学習（オプション）
+**方法B: マルチデータソース統合パイプライン（新規）**
+
+```bash
+# 複数ソースからデータを取得・統合（推奨）
+./run_multi_source_pipeline.sh 7
+
+# または個別に実行
+# Yahoo Financeから取得
+python jobs/download_yahoo_finance.py --pair USDJPY --start-date 2025-01-01 --end-date 2025-01-02 --interval 1h
+
+# OANDAから取得（OANDA_API_KEY環境変数が必要）
+python jobs/download_oanda.py --pair USDJPY --start "2025-01-01T00:00:00" --end "2025-01-02T00:00:00" --granularity H1
+
+# データをマージ
+python jobs/merge_data_sources.py --pair USDJPY --start-date 2025-01-01 --end-date 2025-01-02
+```
+
+**モデル学習（オプション）**
+
+```bash
 python jobs/train_fx_model.py \
   --features data/features/USDJPY/M5_features.parquet \
   --output models/fx_usdjpy_model.pkl \
@@ -107,7 +129,9 @@ python jobs/train_fx_model.py \
   --forward-bars 60
 ```
 
-> **Note**: モデル学習は任意です。モデルが無い場合は、高精度ルールベース分析が自動的に使用されます。
+> **Note**: 
+> - モデル学習は任意です。モデルが無い場合は、高精度ルールベース分析が自動的に使用されます。
+> - マルチデータソースの詳細は `MULTI_SOURCE_DATA.md` を参照してください。
 
 ## Renderデプロイ
 
@@ -253,6 +277,9 @@ Renderの **Environment** タブで以下を設定：
 ├── fx_ai_agent.py        # FX分析AIエージェント（高精度分析）
 ├── jobs/                  # データ処理ジョブ
 │   ├── download_bi5.py           # Dukascopyからティックデータ取得
+│   ├── download_yahoo_finance.py # Yahoo FinanceからOHLCVデータ取得（新規）
+│   ├── download_oanda.py         # OANDA APIからOHLCVデータ取得（新規）
+│   ├── merge_data_sources.py     # 複数データソースをマージ（新規）
 │   ├── build_m1_from_bi5.py     # M1バー生成
 │   ├── build_bars_from_m1.py    # 全時間足生成（M5/H1/D1/1M/6M）
 │   ├── fetch_macro_events.py    # TradingEconomics経済指標取得
@@ -262,8 +289,11 @@ Renderの **Environment** タブで以下を設定：
 ├── models/                # 学習済みモデル保存先（.gitignore対象）
 │   └── fx_usdjpy_model.pkl      # FX予測モデル（学習後）
 ├── data/                  # データ保存先（.gitignore対象）
-│   ├── raw_bi5/          # 生データ（.bi5）
-│   ├── bars/              # OHLCバー（Parquet）
+│   ├── raw_bi5/          # Dukascopy生データ（.bi5）
+│   ├── bars/              # Dukascopy OHLCバー（Parquet）
+│   ├── yahoo_finance/     # Yahoo Financeデータ（Parquet、新規）
+│   ├── oanda/             # OANDAデータ（Parquet、新規）
+│   ├── merged/            # マージされたデータ（Parquet、新規）
 │   ├── features/          # 特徴量（Parquet）
 │   └── events/            # イベントキャッシュ（Parquet）
 ├── render.yaml            # Render Blueprint設定
@@ -277,9 +307,18 @@ Renderの **Environment** タブで以下を設定：
 ## 機能詳細
 
 ### データ収集
-- **Dukascopy**: 無料ヒストリカルティックデータ（2003年〜現在）
+
+#### FX価格データ（複数ソース対応）
+- **Dukascopy**: 無料ヒストリカルティックデータ（2003年〜現在、推奨）
+- **Yahoo Finance**: 無料OHLCVデータ（yfinanceライブラリ経由、新規）
+- **OANDA**: 公式API経由のOHLCVデータ（7日間無料トライアル、新規）
+- **データマージ**: 複数ソースを統合してデータ品質を向上（`jobs/merge_data_sources.py`）
+
+#### イベントデータ
 - **TradingEconomics**: 経済指標カレンダー（重要度2&3、方向付きサプライズ）
 - **中央銀行RSS**: BOJ/ECB/Fed/BoEの公式発表・要人発言
+
+詳細は `MULTI_SOURCE_DATA.md` を参照してください。
 
 ### 分析機能
 - **マルチ時間足**: M1/M5/H1/D1/1M/6Mの全時間軸分析

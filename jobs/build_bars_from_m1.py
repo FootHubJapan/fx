@@ -8,14 +8,30 @@ import pandas as pd
 
 def resample_ohlc(df: pd.DataFrame, rule: str) -> pd.DataFrame:
     """Resample M1 to higher timeframes"""
-    o = df["open"].resample(rule).first()
-    h = df["high"].resample(rule).max()
-    l = df["low"].resample(rule).min()
-    c = df["close"].resample(rule).last()
-    v = df.get("vol", pd.Series(index=df.index, dtype=float)).resample(rule).sum()
-    s = df.get("spread", pd.Series(index=df.index, dtype=float)).resample(rule).mean()
-    out = pd.DataFrame({"open": o, "high": h, "low": l, "close": c, "vol": v, "spread": s})
-    return out.dropna(subset=["open","high","low","close"])
+    try:
+        # 必要なカラムが存在するか確認
+        required_cols = ["open", "high", "low", "close"]
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            raise ValueError(f"Missing required columns: {missing_cols}")
+        
+        # resampleを実行
+        o = df["open"].resample(rule).first()
+        h = df["high"].resample(rule).max()
+        l = df["low"].resample(rule).min()
+        c = df["close"].resample(rule).last()
+        
+        # ボリュームとスプレッド（オプション）
+        v = df.get("vol", pd.Series(index=df.index, dtype=float)).resample(rule).sum() if "vol" in df.columns else pd.Series(index=o.index, dtype=float)
+        s = df.get("spread", pd.Series(index=df.index, dtype=float)).resample(rule).mean() if "spread" in df.columns else pd.Series(index=o.index, dtype=float)
+        
+        out = pd.DataFrame({"open": o, "high": h, "low": l, "close": c, "vol": v, "spread": s})
+        return out.dropna(subset=["open","high","low","close"])
+    except Exception as e:
+        print(f"[ERROR] Resample failed with rule {rule}: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
 
 
 def build_monthly(df: pd.DataFrame) -> pd.DataFrame:
@@ -61,6 +77,16 @@ def main():
 
     m1 = pd.concat(dfs).sort_index()
 
+    # 時間足のマッピング（pandas resample形式）
+    tf_map = {
+        "M5": "5T",    # 5分
+        "M15": "15T",  # 15分
+        "H1": "1H",    # 1時間
+        "H4": "4H",    # 4時間
+        "D1": "1D",    # 1日
+        "W1": "1W",    # 1週間
+    }
+    
     tf_list = [x.strip() for x in args.tfs.split(",") if x.strip()]
     for tf in tf_list:
         if tf == "1M":
@@ -71,7 +97,8 @@ def main():
             bars = build_6m_from_1m(m_1m)
             rule_name = "6M"
         else:
-            rule = tf.replace("M", "min") if tf.startswith("M") else tf
+            # 時間足をpandas resample形式に変換
+            rule = tf_map.get(tf, tf)
             bars = resample_ohlc(m1, rule)
             rule_name = tf
 

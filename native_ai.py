@@ -30,8 +30,18 @@ def call_native_ai(text: str, context: Optional[str] = None) -> str:
     if not url:
         return "NATIVE_AI_URL が未設定です（.env または Render環境変数を確認してね）"
     
-    # プレースホルダーの場合はエラーを返す
-    if "example.com" in url.lower() or "your-ai" in url.lower():
+    # プレースホルダーの場合はエラーを返す（より厳密にチェック）
+    url_lower = url.lower()
+    is_placeholder = (
+        "example.com" in url_lower or 
+        "your-ai" in url_lower or 
+        "placeholder" in url_lower or
+        url_lower.startswith("http://example") or
+        url_lower.startswith("https://example") or
+        "localhost" in url_lower and "127.0.0.1" not in url_lower  # localhostは開発環境では有効だが、本番では避ける
+    )
+    
+    if is_placeholder:
         return "⚠️ NATIVE_AI_URL がプレースホルダーのままです。実際のAPI URLを設定するか、FX分析AIエージェントを使用してください。"
 
     api_key = os.getenv("NATIVE_AI_API_KEY", "").strip()

@@ -12,19 +12,27 @@
 ### データフロー
 
 ```
-Dukascopy → Tickデータ → M1バー → 全時間足 → 特徴量生成
-                                                      ↓
-TradingEconomics/RSS → イベントデータ ────────────→ 特徴量生成
-                                                      ↓
-                                            FX分析AIエージェント
-                                                      ↓
-                                            LINE Bot → ユーザー
+複数データソース
+├─ Dukascopy → Tickデータ → M1バー → 全時間足 ──┐
+├─ Yahoo Finance → OHLCVバー ──────────────────┤
+└─ OANDA → OHLCVバー（API） ──────────────────┤
+                                              ↓
+                                        データマージ
+                                              ↓
+TradingEconomics/RSS → イベントデータ ───→ 特徴量生成
+                                              ↓
+                                    FX分析AIエージェント
+                                              ↓
+                                    LINE Bot → ユーザー
 ```
 
 ### コンポーネント
 
 1. **データ収集層**
    - `jobs/download_bi5.py`: Dukascopyからティックデータ取得
+   - `jobs/download_yahoo_finance.py`: Yahoo FinanceからOHLCVデータ取得（新規）
+   - `jobs/download_oanda.py`: OANDA APIからOHLCVデータ取得（新規）
+   - `jobs/merge_data_sources.py`: 複数データソースをマージ（新規）
    - `jobs/fetch_macro_events.py`: 経済指標取得
    - `jobs/fetch_rss_events.py`: 要人発言取得
 

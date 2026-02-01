@@ -316,15 +316,48 @@ def analyze_fx(user_text: str, pair: str = "USDJPY") -> str:
     
     Args:
         user_text: ユーザーの質問・メッセージ
-        pair: 通貨ペア
+        pair: 通貨ペア（"USDJPY", "USD/JPY", "usdjpy"など可）
     
     Returns:
         分析結果のテキスト
     """
-    # 特徴量データを読み込む
-    features_path = Path(f"data/features/{pair}/M5_features.parquet")
+    # 通貨ペア名を正規化（"USD/JPY" → "USDJPY", "usdjpy" → "USDJPY"）
+    pair_normalized = pair.upper().replace("/", "").replace("-", "")
+    
+    # 特徴量データを読み込む（プロジェクトルートからの絶対パスを使用）
+    # __file__が存在する場合はその親ディレクトリを、存在しない場合はカレントディレクトリを使用
+    try:
+        project_root = Path(__file__).parent
+    except NameError:
+        # __file__が定義されていない場合（例: インタラクティブシェル）
+        project_root = Path.cwd()
+    
+    # 特徴量ファイルのパス（H1またはM5を試す）
+    features_path_h1 = project_root / f"data/features/{pair_normalized}/H1_features.parquet"
+    features_path_m5 = project_root / f"data/features/{pair_normalized}/M5_features.parquet"
+    
+    # H1を優先、なければM5を試す
+    if features_path_h1.exists():
+        features_path = features_path_h1
+    elif features_path_m5.exists():
+        features_path = features_path_m5
+    else:
+        features_path = features_path_h1  # エラーメッセージ用
     if not features_path.exists():
-        return f"⚠️ {pair}の特徴量データが見つかりません。まずデータ更新を実行してください。"
+        # データが無い場合、簡易的な分析を返す（デプロイ環境でのフォールバック）
+        return f"""⚠️ {pair_normalized}の特徴量データが見つかりません。
+
+📋 現在の状況:
+- データファイルが存在しません
+- 詳細な分析を実行するには、データ更新が必要です
+
+💡 次のステップ:
+1. LINE Botで「データ更新」コマンドを送信
+2. または、管理者にデータ更新を依頼
+
+📊 簡易分析:
+データが無いため、詳細な分析は実行できません。
+データ更新後、「分析」または「予測」コマンドを再度お試しください。"""
     
     try:
         features_df = pd.read_parquet(features_path)
@@ -334,8 +367,8 @@ def analyze_fx(user_text: str, pair: str = "USDJPY") -> str:
         # エージェントを作成
         agent = create_fx_agent()
         
-        # 分析実行
-        result = agent.analyze(features_df, pair=pair)
+        # 分析実行（正規化されたペア名を使用）
+        result = agent.analyze(features_df, pair=pair_normalized)
         
         # 自然言語で返答を生成
         response_parts = [result["prediction"]]

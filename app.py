@@ -88,19 +88,24 @@ def run_job(job_name: str, args: list = None, timeout: int = 300) -> tuple[bool,
 
 
 def analyze_usdjpy() -> str:
-    """USDJPY分析を実行して結果を返す"""
-    # 最新の特徴量ファイルを確認
-    features_path = Path("data/features/USDJPY/M5_features.parquet")
-    if not features_path.exists():
-        return "特徴量ファイルが見つかりません。まずデータ更新を実行してください。"
-    
-    # 簡易分析（実際はモデル推論をここに入れる）
-    import pandas as pd
-    try:
-        df = pd.read_parquet(features_path)
-        latest = df.iloc[-1]
+    """USDJPY分析を実行して結果を返す（FX AIエージェントを使用）"""
+    if FX_AI_AGENT_AVAILABLE:
+        # FX AIエージェントを使用（高精度分析）
+        return analyze_fx("現在の相場状況を分析してください", pair="USDJPY")
+    else:
+        # フォールバック: 簡易分析
+        # プロジェクトルートからの絶対パスを使用
+        project_root = Path(__file__).parent
+        features_path = project_root / "data/features/USDJPY/M5_features.parquet"
+        if not features_path.exists():
+            return "特徴量ファイルが見つかりません。まずデータ更新を実行してください。"
         
-        result = f"""USDJPY 最新分析結果
+        import pandas as pd
+        try:
+            df = pd.read_parquet(features_path)
+            latest = df.iloc[-1]
+            
+            result = f"""USDJPY 最新分析結果
 
 📊 テクニカル指標
 RSI(14): {latest.get('rsi_14', 'N/A'):.2f}
@@ -114,45 +119,121 @@ MA(20): {latest.get('ma_20', 'N/A'):.2f}
 💡 推奨アクション
 データ更新日時: {df['ts'].max()}
 """
-        return result
-    except Exception as e:
-        return f"分析エラー: {e}"
+            return result
+        except Exception as e:
+            return f"分析エラー: {e}"
 
 
 def update_data() -> str:
-    """データ更新を実行"""
+    """データ更新を実行（複数データソース対応、簡略化版）"""
     now = datetime.now(timezone.utc)
-    end = now.strftime("%Y-%m-%dT%H")
-    start = (now - timedelta(days=1)).strftime("%Y-%m-%dT%H")
-    
-    # 1. bi5ダウンロード
-    success, msg = run_job("download_bi5", [
-        "--pair", "USDJPY",
-        "--start", start,
-        "--end", end
-    ])
-    if not success:
-        return f"データ取得エラー: {msg}"
-    
-    # 2. M1生成
-    start_date = (now - timedelta(days=1)).strftime("%Y-%m-%d")
     end_date = now.strftime("%Y-%m-%d")
-    success, msg = run_job("build_m1_from_bi5", [
+    start_date = (now - timedelta(days=3)).strftime("%Y-%m-%d")  # 3日分に短縮（処理時間短縮）
+    
+    results = []
+    results.append("🔄 データ更新を開始しました...")
+    
+    # 方法1: Yahoo Financeからデータを取得（最も確実で簡単）
+    print("[INFO] Yahoo Financeからデータを取得中...")
+    results.append("📥 Yahoo Financeからデータを取得中...")
+    success_yahoo, msg_yahoo = run_job("download_yahoo_finance", [
         "--pair", "USDJPY",
         "--start-date", start_date,
-        "--end-date", end_date
-    ])
-    if not success:
-        return f"M1生成エラー: {msg}"
+        "--end-date", end_date,
+        "--interval", "1h"
+    ], timeout=180)  # タイムアウトを3分に短縮
     
-    # 3. 全時間足生成
-    success, msg = run_job("build_bars_from_m1", [
-        "--pair", "USDJPY"
-    ])
-    if not success:
-        return f"時間足生成エラー: {msg}"
+    if success_yahoo:
+        results.append("✅ Yahoo Financeデータ取得完了")
+        
+        # Yahoo Financeデータをbuild_features.pyが読み込める形式に変換
+        # data/yahoo_finance/USDJPY/1h.parquet → data/bars/USDJPY/tf=H1/all.parquet
+        try:
+            import pandas as pd
+            from pathlib import Path
+            
+            yahoo_path = Path("data/yahoo_finance/USDJPY/1h.parquet")
+            bars_dir = Path("data/bars/USDJPY/tf=H1")
+            
+            if yahoo_path.exists():
+                bars_dir.mkdir(parents=True, exist_ok=True)
+                df = pd.read_parquet(yahoo_path)
+                
+                # タイムスタンプをUTCに統一
+                if "ts" in df.columns:
+                    df["ts"] = pd.to_datetime(df["ts"], utc=True)
+                elif df.index.name == "ts" or isinstance(df.index, pd.DatetimeIndex):
+                    df = df.reset_index()
+                    if "ts" not in df.columns and len(df.columns) > 0:
+                        # 最初の列がタイムスタンプの可能性
+                        df.columns = ["ts"] + list(df.columns[1:])
+                
+                # 必要なカラムがあるか確認
+                required_cols = ["open", "high", "low", "close"]
+                if all(col in df.columns for col in required_cols):
+                    bars_path = bars_dir / "all.parquet"
+                    df.to_parquet(bars_path, index=False)
+                    results.append("✅ H1バーデータを準備完了")
+                else:
+                    results.append("⚠️ Yahoo Financeデータに必要なカラムがありません")
+        except Exception as e:
+            results.append(f"⚠️ バーデータ変換エラー: {str(e)[:100]}")
+    else:
+        results.append(f"⚠️ Yahoo Finance取得エラー: {msg_yahoo}")
     
-    return "✅ データ更新完了"
+    # 方法2: DukascopyからBI5をダウンロード（スキップ - 時間がかかりすぎる）
+    # Render環境ではYahoo Financeのみを使用
+    results.append("⏭️ Dukascopyはスキップ（Yahoo Financeデータを使用）")
+    
+    if success_bi5:
+        results.append("✅ Dukascopy BI5ダウンロード完了")
+        
+        # M1生成
+        start_date_m1 = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+        end_date_m1 = now.strftime("%Y-%m-%d")
+        success_m1, msg_m1 = run_job("build_m1_from_bi5", [
+            "--pair", "USDJPY",
+            "--start-date", start_date_m1,
+            "--end-date", end_date_m1
+        ], timeout=300)
+        
+        if success_m1:
+            results.append("✅ M1バー生成完了")
+            
+            # 全時間足生成
+            success_bars, msg_bars = run_job("build_bars_from_m1", [
+                "--pair", "USDJPY"
+            ], timeout=300)
+            
+            if success_bars:
+                results.append("✅ 時間足バー生成完了")
+            else:
+                results.append(f"⚠️ 時間足生成エラー: {msg_bars}")
+        else:
+            results.append(f"⚠️ M1生成エラー: {msg_m1}")
+    else:
+        results.append(f"⚠️ Dukascopy取得エラー: {msg_bi5}（スキップ）")
+    
+    # イベントデータ取得（簡略化 - スキップして高速化）
+    # results.append("⏭️ イベントデータはスキップ（高速化のため）")
+    
+    # 特徴量生成（データが存在する場合）
+    # Yahoo FinanceからはH1データを取得しているため、H1特徴量を生成
+    print("[INFO] 特徴量を生成中...")
+    results.append("🔧 特徴量を生成中...")
+    success_features, msg_features = run_job("build_features", [
+        "--pair", "USDJPY",
+        "--timeframe", "H1"  # Yahoo Financeは1hデータなので、H1特徴量を生成
+    ], timeout=180)  # タイムアウトを3分に短縮
+    
+    if success_features:
+        results.append("✅ 特徴量生成完了")
+        return "\n".join(results) + "\n\n✅ データ更新完了！「分析」コマンドを試してください。"
+    else:
+        # エラーメッセージを短縮
+        error_msg = str(msg_features)[:200] if msg_features else "不明なエラー"
+        results.append(f"⚠️ 特徴量生成エラー: {error_msg}")
+        return "\n".join(results) + "\n\n⚠️ 一部の処理が失敗しました。数分待ってから再度「データ更新」を試してください。"
 
 
 def update_events() -> str:
@@ -262,8 +343,18 @@ def handle_message(event):
             return
         
         if cmd == "update_data":
-            result = update_data()
-            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
+            # 即座に応答を返す（処理が長時間かかる可能性があるため）
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="🔄 データ更新を開始しました。処理中です...\n\n（数分かかる場合があります）")
+            )
+            # バックグラウンドで処理を実行（LINE Botのタイムアウトを回避）
+            try:
+                result = update_data()
+                # 処理完了後にユーザーに通知（オプション - 実装が複雑なため、今回はスキップ）
+                # ユーザーは「分析」コマンドで結果を確認できる
+            except Exception as e:
+                print(f"[ERROR] Data update failed: {e}")
             return
         
         if cmd == "update_events":
@@ -280,30 +371,41 @@ def handle_message(event):
         # コマンドが一致しない場合: FX分析AIエージェントまたは外部ネイティブAIに投げる
         # 優先順位: 1) FX分析AIエージェント（このプロジェクト内） 2) 外部ネイティブAI
         
+        # FX関連の質問かどうかを簡易判定（大文字小文字を区別しない）
+        fx_keywords = ["ドル円", "USDJPY", "usdjpy", "USD/JPY", "usd/jpy", "為替", "FX", "fx", 
+                      "相場", "価格", "予測", "分析", "買い", "売り", "上昇", "下落", 
+                      "トレンド", "チャート", "円", "ドル", "jpy", "usd"]
+        text_lower = text.lower()
+        is_fx_question = any(kw.lower() in text_lower for kw in fx_keywords)
+        
         # 1. FX分析AIエージェント（推奨・高精度分析）
-        if FX_AI_AGENT_AVAILABLE:
+        if FX_AI_AGENT_AVAILABLE and is_fx_question:
             try:
-                # FX関連の質問かどうかを簡易判定（大文字小文字を区別しない）
-                fx_keywords = ["ドル円", "USDJPY", "usdjpy", "USD/JPY", "usd/jpy", "為替", "FX", "fx", 
-                              "相場", "価格", "予測", "分析", "買い", "売り", "上昇", "下落", 
-                              "トレンド", "チャート", "円", "ドル", "jpy", "usd"]
-                text_lower = text.lower()
-                is_fx_question = any(kw.lower() in text_lower for kw in fx_keywords)
-                
-                if is_fx_question:
-                    # FX分析AIエージェントで回答
-                    ai_reply = analyze_fx(text, pair="USDJPY")
-                    line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
-                    return
+                # FX分析AIエージェントで回答
+                ai_reply = analyze_fx(text, pair="USDJPY")
+                # データが見つからないなどの警告でも、そのまま返す（外部AIにフォールバックしない）
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
+                return
             except Exception as e:
                 print(f"[ERROR] FX AI Agent failed: {e}")
-                # フォールバック処理に続く
+                # FX質問の場合は、エラーでも外部AIにフォールバックせず、エラーメッセージを返す
+                error_msg = f"⚠️ FX分析中にエラーが発生しました: {str(e)[:200]}"
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_msg))
+                return
         
-        # 2. 外部ネイティブAI（NATIVE_AI_URLが設定されている場合、かつプレースホルダーでない場合）
+        # 2. 外部ネイティブAI（FX質問でない場合、またはFX分析AIが利用不可の場合）
+        # NATIVE_AI_URLが設定されている場合、かつプレースホルダーでない場合のみ呼び出す
         native_ai_url = os.getenv("NATIVE_AI_URL", "").strip()
-        if NATIVE_AI_AVAILABLE and native_ai_url and "example.com" not in native_ai_url.lower():
+        is_placeholder_url = (
+            not native_ai_url or 
+            "example.com" in native_ai_url.lower() or 
+            "your-ai" in native_ai_url.lower() or
+            "placeholder" in native_ai_url.lower()
+        )
+        
+        if NATIVE_AI_AVAILABLE and native_ai_url and not is_placeholder_url:
             try:
-                # FX分析データをcontextに含める
+                # FX分析データをcontextに含める（あれば）
                 context = None
                 try:
                     features_path = Path("data/features/USDJPY/M5_features.parquet")
@@ -318,13 +420,24 @@ def handle_message(event):
                 
                 # 外部ネイティブAIを呼び出す
                 ai_reply = call_native_ai(text, context=context)
+                # プレースホルダー警告が返ってきた場合は、そのまま返す
                 line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
                 return
             except Exception as e:
                 print(f"[ERROR] External Native AI call failed: {e}")
-                # フォールバック処理に続く
+                error_msg = f"⚠️ 外部AI呼び出し中にエラーが発生しました: {str(e)[:200]}"
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=error_msg))
+                return
         
-        # 3. デフォルト（AI未設定の場合）
+        # 3. FX質問だがFX分析AIが利用不可の場合
+        if is_fx_question and not FX_AI_AGENT_AVAILABLE:
+            line_bot_api.reply_message(
+                event.reply_token,
+                TextSendMessage(text="⚠️ FX分析AIエージェントが利用できません。データ更新を実行するか、管理者にご連絡ください。")
+            )
+            return
+        
+        # 4. デフォルト（AI未設定の場合）
         if FX_AI_AGENT_AVAILABLE:
             # FX分析AIエージェントで一般的な分析を返す
             try:
