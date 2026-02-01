@@ -137,6 +137,8 @@ Renderの **Environment** タブで以下を設定：
 |-----|-------|------|------|
 | `LINE_CHANNEL_ACCESS_TOKEN` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのアクセストークン |
 | `LINE_CHANNEL_SECRET` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのシークレット |
+| `NATIVE_AI_URL` | （あなたのAI API URL） | オプション | ネイティブAIのHTTP API URL |
+| `NATIVE_AI_API_KEY` | （APIキー） | オプション | ネイティブAIの認証キー（必要な場合） |
 | `TE_API_KEY` | `guest:guest` | オプション | TradingEconomics APIキー |
 
 **環境変数の設定方法**:
@@ -154,8 +156,29 @@ Renderの **Environment** タブで以下を設定：
    https://your-app-name.onrender.com/callback
    ```
    （`your-app-name` は Renderで設定したサービス名）
+   > **重要**: エンドポイントは `/callback` です（`/` ではありません）
 3. **Webhook** を有効化（**Use webhook** をON）
 4. **Verify** ボタンで接続確認
+   - ✅ **200 OK** が返れば成功
+   - ❌ **405 Method Not Allowed** が出る場合は、URLが正しいか確認
+
+#### 4-1. Channel Access Token（長期）の発行
+
+**重要**: Channel Access Tokenは **LINE Developers** 側で発行します。
+
+1. LINE Developers Console → 対象チャネル → **Messaging API** タブ
+2. 下の方に **「Channel access token（長期）」** セクションがある
+3. **発行** または **再発行** ボタンをクリック
+4. 表示されたトークンをコピー（**このトークンは一度しか表示されません**）
+5. Renderの環境変数 `LINE_CHANNEL_ACCESS_TOKEN` に設定
+
+#### 4-2. LINE Official Account Manager で自動応答をOFF
+
+1. [LINE Official Account Manager](https://manager.line.biz/) にログイン
+2. 対象アカウント → **設定** → **応答設定**
+3. 以下を設定：
+   - **Webhook：ON** ✅
+   - **応答メッセージ：OFF** ✅（自動応答を止める）
 
 #### 5. デプロイ実行
 
@@ -193,9 +216,13 @@ Renderの **Environment** タブで以下を設定：
 
 #### LINE Webhookエラー
 
-- **URL確認**: Webhook URLが正しいか（`/callback` が含まれているか）
+- **405 Method Not Allowed**: Webhook URLが `/callback` になっているか確認（ルート `/` ではなく）
+- **401 Unauthorized**: Channel Access Token または Channel Secret が正しいか確認
+- **自動応答が返る**: LINE Official Account Manager で応答メッセージをOFFにする
+- **URL確認**: Webhook URLが正しいか（`https://your-app.onrender.com/callback` の形式か）
 - **SSL証明書**: Renderは自動でHTTPS証明書を発行（数分かかる場合あり）
 - **チャネル設定**: LINE DevelopersでWebhookが有効になっているか確認
+- **詳細**: `LINE_SETUP_GUIDE.md` を参照
 
 ## ディレクトリ構造
 
@@ -239,6 +266,7 @@ Renderの **Environment** タブで以下を設定：
 - **分析結果表示**: 最新のテクニカル・イベント状況を表示
 - **データ更新**: LINEからデータ取得を実行
 - **予測表示**: 売買判断の提案
+- **ネイティブAI連携**: OpenAI不使用、あなたのHTTP APIを呼び出し（`NATIVE_AI_URL`設定時）
 
 ## 動作確認
 

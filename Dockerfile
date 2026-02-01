@@ -18,8 +18,8 @@ COPY . .
 # データディレクトリ作成
 RUN mkdir -p data/{raw_bi5,bars,features,events,logs}
 
-# ポート公開
-EXPOSE 5000
+# ポート公開（Renderが自動設定する$PORTを使用）
+# EXPOSEは動的ポートのためコメントアウト
 
-# 起動コマンド
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000", "--workers", "2", "--timeout", "120"]
+# 起動コマンド（$PORT環境変数を使用）
+CMD gunicorn app:app --bind 0.0.0.0:${PORT:-5000} --workers 2 --timeout 120

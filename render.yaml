@@ -9,6 +9,12 @@ services:
         sync: false
       - key: LINE_CHANNEL_SECRET
         sync: false
+      - key: NATIVE_AI_URL
+        sync: false
+      - key: NATIVE_AI_API_KEY
+        sync: false
+      - key: NATIVE_AI_TIMEOUT_SEC
+        value: "20"
       - key: TE_API_KEY
         value: guest:guest
       - key: PYTHON_VERSION
