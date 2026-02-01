@@ -7,8 +7,10 @@ USDJPYを中心としたFX分析システムとLINEボット連携。
 - **データ収集**: Dukascopyからティックデータを自動取得
 - **バー生成**: M1/M5/H1/D1/1M/6Mなど全時間足を自動生成
 - **特徴量生成**: テクニカル指標 + ファンダメンタル（経済指標・要人発言）
-- **予測分析**: マルチ時間足分析による売買判断
+- **高精度分析AI**: LightGBMベースの機械学習モデルによる予測分析
+- **予測分析**: マルチ時間足分析による売買判断（買い/売り/様子見）
 - **LINE連携**: LINEから分析結果を取得・レポート生成
+- **拡張性**: 将来的にサッカー勝敗分析などにも対応可能な設計
 
 ## セットアップ
 
@@ -88,7 +90,17 @@ python jobs/fetch_rss_events.py --events-cache data/events/events_cache.parquet
 
 # 特徴量生成
 python jobs/build_features.py --bars data/bars/USDJPY/tf=M5/all.parquet --out data/features/USDJPY/M5_features.parquet --events-cache data/events/events_cache.parquet
+
+# 高精度分析モデル学習（オプション）
+python jobs/train_fx_model.py \
+  --features data/features/USDJPY/M5_features.parquet \
+  --output models/fx_usdjpy_model.pkl \
+  --train-start 2020-01-01 \
+  --train-end 2024-12-31 \
+  --forward-bars 60
 ```
+
+> **Note**: モデル学習は任意です。モデルが無い場合は、高精度ルールベース分析が自動的に使用されます。
 
 ## Renderデプロイ
 
@@ -229,13 +241,17 @@ Renderの **Environment** タブで以下を設定：
 ```
 .
 ├── app.py                 # メインアプリケーション（LINE Webhook）
+├── fx_ai_agent.py        # FX分析AIエージェント（高精度分析）
 ├── jobs/                  # データ処理ジョブ
 │   ├── download_bi5.py           # Dukascopyからティックデータ取得
 │   ├── build_m1_from_bi5.py     # M1バー生成
 │   ├── build_bars_from_m1.py    # 全時間足生成（M5/H1/D1/1M/6M）
 │   ├── fetch_macro_events.py    # TradingEconomics経済指標取得
 │   ├── fetch_rss_events.py      # 中央銀行RSS取得
-│   └── build_features.py        # 特徴量生成
+│   ├── build_features.py        # 特徴量生成
+│   └── train_fx_model.py        # 高精度分析モデル学習
+├── models/                # 学習済みモデル保存先（.gitignore対象）
+│   └── fx_usdjpy_model.pkl      # FX予測モデル（学習後）
 ├── data/                  # データ保存先（.gitignore対象）
 │   ├── raw_bi5/          # 生データ（.bi5）
 │   ├── bars/              # OHLCバー（Parquet）
@@ -262,11 +278,93 @@ Renderの **Environment** タブで以下を設定：
 - **ファンダメンタル**: 経済指標サプライズ、要人発言イベント
 - **予測**: 短期（イベント反応）〜中長期（トレンド）まで対応
 
+### 高精度分析AIエージェント
+
+**FX分析AIエージェント** (`fx_ai_agent.py`) は、以下の機能を提供します：
+
+- **モデルベース分析**: LightGBM学習済みモデルによる高精度予測
+- **ルールベース分析**: モデル未学習時も高精度なルールベース分析を実行
+- **自然言語レポート**: 分析結果を自然言語で説明
+- **主要要因抽出**: 判断に影響した要因を自動抽出
+- **リスク評価**: ボラティリティ・スプレッドからリスクレベルを評価
+
+**使い方**:
+
+1. **モデル学習**（推奨）:
+   ```bash
+   python jobs/train_fx_model.py \
+     --features data/features/USDJPY/M5_features.parquet \
+     --output models/fx_usdjpy_model.pkl
+   ```
+
+2. **LINE Botから使用**:
+   - 「予測」コマンド: 高精度予測を取得
+   - 「分析」コマンド: 現在の市場状況を分析
+   - FX関連の質問: 自動的にAIエージェントが回答
+
+3. **Pythonコードから使用**:
+   ```python
+   from fx_ai_agent import analyze_fx
+   
+   # FX分析を実行
+   result = analyze_fx("現在の相場状況を教えて", pair="USDJPY")
+   print(result)
+   ```
+
+**出力例**:
+```
+💹 USDJPY 予測
+
+方向: 買い
+信頼度: 75%
+現在価格: 150.25
+
+📊 主要指標
+RSI(14): 35.20
+ATR(14): 0.0125
+MA(20): 150.10
+
+📈 イベント（24時間）
+マクロ: 2件
+ニュース: 1件
+
+📋 詳細分析
+市場は売られすぎの状態です。
+最近の経済指標は強気のサプライズが多く、上昇要因となっています。
+
+判断: 買い（信頼度: 75%）
+
+🔑 主要要因
+1. RSI売られすぎ
+2. マクロイベント影響（+0.65）
+```
+
+### 将来の拡張（サッカー分析対応）
+
+このプロジェクトは**分析特化型エージェント**として設計されており、将来的にサッカー勝敗分析にも対応可能です。
+
+- **設計**: データソースを抽象化し、FX分析とサッカー分析を同じフレームワークで扱える構造
+- **詳細**: `ARCHITECTURE.md` を参照
+
+実装計画:
+1. ✅ Phase 1: FX分析の高精度化（現在）
+2. ⏳ Phase 2: データソース抽象化レイヤー実装
+3. ⏳ Phase 3: サッカーデータソース実装
+4. ⏳ Phase 4: サッカー分析エージェント実装
+
 ### LINEボット機能
 - **分析結果表示**: 最新のテクニカル・イベント状況を表示
 - **データ更新**: LINEからデータ取得を実行
-- **予測表示**: 売買判断の提案
-- **ネイティブAI連携**: OpenAI不使用、あなたのHTTP APIを呼び出し（`NATIVE_AI_URL`設定時）
+- **予測表示**: 高精度AIエージェントによる売買判断の提案
+- **AIエージェント**: プロジェクト内のFX分析AIエージェントが自動的に回答
+- **外部AI連携**: オプションで外部HTTP APIを呼び出し（`NATIVE_AI_URL`設定時）
+
+**LINE Botコマンド**:
+- `分析`: 現在の市場状況を分析
+- `予測`: 高精度AIエージェントによる予測を取得
+- `データ更新`: データ取得ジョブを実行
+- `イベント更新`: 経済指標・ニュースイベントを更新
+- `ヘルプ`: コマンド一覧を表示
 
 ## 動作確認
 
@@ -318,8 +416,17 @@ Renderの **Environment** タブで以下を設定：
 
 ## 次のステップ
 
-1. **モデル学習**: 特徴量を使って機械学習モデルを構築
+1. ✅ **モデル学習**: 特徴量を使って機械学習モデルを構築（`jobs/train_fx_model.py`）
 2. **バックテスト**: walk-forward検証で性能評価
-3. **自動取引**: 条件付きエントリー/エグジットの実装
-4. **他通貨対応**: EURUSD, GBPUSD, AUDUSDなどの追加
-5. **レポート生成**: 日次/週次レポートの自動生成
+3. **モデル最適化**: ハイパーパラメータチューニング、特徴量選択
+4. **自動取引**: 条件付きエントリー/エグジットの実装
+5. **他通貨対応**: EURUSD, GBPUSD, AUDUSDなどの追加
+6. **レポート生成**: 日次/週次レポートの自動生成
+7. **サッカー分析対応**: データソース抽象化 → サッカー分析エージェント実装
+
+## 関連ドキュメント
+
+- `ARCHITECTURE.md`: アーキテクチャ設計（FX + 将来のサッカー分析対応）
+- `DEPLOY.md`: Renderデプロイ詳細手順
+- `QUICKSTART.md`: クイックスタートガイド
+- `LINE_SETUP_GUIDE.md`: LINE Bot設定詳細ガイド
