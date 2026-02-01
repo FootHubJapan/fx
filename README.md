@@ -156,8 +156,29 @@ Renderの **Environment** タブで以下を設定：
    https://your-app-name.onrender.com/callback
    ```
    （`your-app-name` は Renderで設定したサービス名）
+   > **重要**: エンドポイントは `/callback` です（`/` ではありません）
 3. **Webhook** を有効化（**Use webhook** をON）
 4. **Verify** ボタンで接続確認
+   - ✅ **200 OK** が返れば成功
+   - ❌ **405 Method Not Allowed** が出る場合は、URLが正しいか確認
+
+#### 4-1. Channel Access Token（長期）の発行
+
+**重要**: Channel Access Tokenは **LINE Developers** 側で発行します。
+
+1. LINE Developers Console → 対象チャネル → **Messaging API** タブ
+2. 下の方に **「Channel access token（長期）」** セクションがある
+3. **発行** または **再発行** ボタンをクリック
+4. 表示されたトークンをコピー（**このトークンは一度しか表示されません**）
+5. Renderの環境変数 `LINE_CHANNEL_ACCESS_TOKEN` に設定
+
+#### 4-2. LINE Official Account Manager で自動応答をOFF
+
+1. [LINE Official Account Manager](https://manager.line.biz/) にログイン
+2. 対象アカウント → **設定** → **応答設定**
+3. 以下を設定：
+   - **Webhook：ON** ✅
+   - **応答メッセージ：OFF** ✅（自動応答を止める）
 
 #### 5. デプロイ実行
 
@@ -195,9 +216,13 @@ Renderの **Environment** タブで以下を設定：
 
 #### LINE Webhookエラー
 
-- **URL確認**: Webhook URLが正しいか（`/callback` が含まれているか）
+- **405 Method Not Allowed**: Webhook URLが `/callback` になっているか確認（ルート `/` ではなく）
+- **401 Unauthorized**: Channel Access Token または Channel Secret が正しいか確認
+- **自動応答が返る**: LINE Official Account Manager で応答メッセージをOFFにする
+- **URL確認**: Webhook URLが正しいか（`https://your-app.onrender.com/callback` の形式か）
 - **SSL証明書**: Renderは自動でHTTPS証明書を発行（数分かかる場合あり）
 - **チャネル設定**: LINE DevelopersでWebhookが有効になっているか確認
+- **詳細**: `LINE_SETUP_GUIDE.md` を参照
 
 ## ディレクトリ構造
 
