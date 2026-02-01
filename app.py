@@ -60,7 +60,7 @@ ALLOWED_COMMANDS = {
 }
 
 
-def run_job(job_name: str, args: list = None) -> tuple[bool, str]:
+def run_job(job_name: str, args: list = None, timeout: int = 300) -> tuple[bool, str]:
     """ジョブを実行して結果を返す"""
     jobs_dir = Path(__file__).parent / "jobs"
     job_path = jobs_dir / f"{job_name}.py"
@@ -74,7 +74,7 @@ def run_job(job_name: str, args: list = None) -> tuple[bool, str]:
             cmd,
             capture_output=True,
             text=True,
-            timeout=300,
+            timeout=timeout,
             cwd=jobs_dir.parent
         )
         if result.returncode == 0:
@@ -82,7 +82,7 @@ def run_job(job_name: str, args: list = None) -> tuple[bool, str]:
         else:
             return False, result.stderr
     except subprocess.TimeoutExpired:
-        return False, "Job timeout"
+        return False, f"Job timeout ({timeout}s)"
     except Exception as e:
         return False, str(e)
 
