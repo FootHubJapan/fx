@@ -29,6 +29,10 @@ def call_native_ai(text: str, context: Optional[str] = None) -> str:
     url = os.getenv("NATIVE_AI_URL", "").strip()
     if not url:
         return "NATIVE_AI_URL が未設定です（.env または Render環境変数を確認してね）"
+    
+    # プレースホルダーの場合はエラーを返す
+    if "example.com" in url.lower() or "your-ai" in url.lower():
+        return "⚠️ NATIVE_AI_URL がプレースホルダーのままです。実際のAPI URLを設定するか、FX分析AIエージェントを使用してください。"
 
     api_key = os.getenv("NATIVE_AI_API_KEY", "").strip()
 

@@ -283,10 +283,12 @@ def handle_message(event):
         # 1. FX分析AIエージェント（推奨・高精度分析）
         if FX_AI_AGENT_AVAILABLE:
             try:
-                # FX関連の質問かどうかを簡易判定
-                fx_keywords = ["ドル円", "USDJPY", "USD/JPY", "為替", "FX", "相場", "価格", "予測", "分析", 
-                              "買い", "売り", "上昇", "下落", "トレンド", "チャート"]
-                is_fx_question = any(kw in text for kw in fx_keywords)
+                # FX関連の質問かどうかを簡易判定（大文字小文字を区別しない）
+                fx_keywords = ["ドル円", "USDJPY", "usdjpy", "USD/JPY", "usd/jpy", "為替", "FX", "fx", 
+                              "相場", "価格", "予測", "分析", "買い", "売り", "上昇", "下落", 
+                              "トレンド", "チャート", "円", "ドル", "jpy", "usd"]
+                text_lower = text.lower()
+                is_fx_question = any(kw.lower() in text_lower for kw in fx_keywords)
                 
                 if is_fx_question:
                     # FX分析AIエージェントで回答
@@ -297,8 +299,9 @@ def handle_message(event):
                 print(f"[ERROR] FX AI Agent failed: {e}")
                 # フォールバック処理に続く
         
-        # 2. 外部ネイティブAI（NATIVE_AI_URLが設定されている場合）
-        if NATIVE_AI_AVAILABLE and os.getenv("NATIVE_AI_URL"):
+        # 2. 外部ネイティブAI（NATIVE_AI_URLが設定されている場合、かつプレースホルダーでない場合）
+        native_ai_url = os.getenv("NATIVE_AI_URL", "").strip()
+        if NATIVE_AI_AVAILABLE and native_ai_url and "example.com" not in native_ai_url.lower():
             try:
                 # FX分析データをcontextに含める
                 context = None
