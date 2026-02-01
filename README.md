@@ -45,12 +45,19 @@ cp .env.example .env
 LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token_here
 LINE_CHANNEL_SECRET=your_line_channel_secret_here
 
+# 外部ネイティブAI（オプション）
+# 設定しない場合: プロジェクト内のFX分析AIエージェントが自動的に使用されます
+# NATIVE_AI_URL=https://your-ai.example.com/chat
+# NATIVE_AI_API_KEY=your_api_key_here
+
 # TradingEconomics API（オプション、guest:guestでも可）
 TE_API_KEY=guest:guest
 
 # ポート（ローカル開発時のみ、Renderでは自動設定）
 PORT=5000
 ```
+
+> **重要**: `NATIVE_AI_URL` は**オプション**です。設定しない場合、プロジェクト内のFX分析AIエージェントが自動的に使用されます。詳細は `ENV_VARIABLES.md` を参照してください。
 
 **LINE Bot設定の取得方法**:
 1. [LINE Developers Console](https://developers.line.biz/console/) にログイン
@@ -149,9 +156,11 @@ Renderの **Environment** タブで以下を設定：
 |-----|-------|------|------|
 | `LINE_CHANNEL_ACCESS_TOKEN` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのアクセストークン |
 | `LINE_CHANNEL_SECRET` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのシークレット |
-| `NATIVE_AI_URL` | （あなたのAI API URL） | オプション | ネイティブAIのHTTP API URL |
-| `NATIVE_AI_API_KEY` | （APIキー） | オプション | ネイティブAIの認証キー（必要な場合） |
+| `NATIVE_AI_URL` | （あなたのAI API URL） | オプション | 外部AI APIのURL（未設定時はFX分析AIエージェントを使用） |
+| `NATIVE_AI_API_KEY` | （APIキー） | オプション | 外部AI APIの認証キー（必要な場合） |
 | `TE_API_KEY` | `guest:guest` | オプション | TradingEconomics APIキー |
+
+> **重要**: `NATIVE_AI_URL` は**オプション**です。設定しない場合、プロジェクト内のFX分析AIエージェントが自動的に使用されます。詳細は `ENV_VARIABLES.md` を参照してください。
 
 **環境変数の設定方法**:
 1. Renderのサービス画面で **Environment** タブを開く
