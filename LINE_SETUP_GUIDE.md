@@ -83,6 +83,23 @@ Render Dashboard → あなたのサービス → **Environment** タブ
 - 末尾に `/callback` が付いているか確認
 - ルート（`/`）ではなく `/callback` を指定
 
+### 503 Service Unavailable
+
+**原因**: LINE Bot APIが初期化されていない（環境変数が設定されていない）
+
+**解決策**:
+1. **Renderの環境変数を確認**:
+   - `LINE_CHANNEL_ACCESS_TOKEN` が設定されているか
+   - `LINE_CHANNEL_SECRET` が設定されているか
+2. **環境変数が設定されていない場合**:
+   - LINE DevelopersでChannel Access Token（長期）を発行
+   - RenderのEnvironmentタブで環境変数を設定
+   - **必ず再デプロイ**を実行（Manual Deploy → Deploy latest commit）
+3. **Renderのログを確認**:
+   - `[WARN] LINE_CHANNEL_ACCESS_TOKEN or LINE_CHANNEL_SECRET not set` というメッセージが出ていないか
+   - エラーメッセージの内容を確認
+4. **詳細**: `TROUBLESHOOTING_503.md` を参照
+
 ### 401 Unauthorized
 
 **原因**: Channel Access Token または Channel Secret が間違っている
