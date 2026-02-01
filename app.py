@@ -16,14 +16,23 @@ load_dotenv()
 
 app = Flask(__name__)
 
+# 環境変数の読み込み（起動時エラーハンドリング）
 LINE_CHANNEL_ACCESS_TOKEN = os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
 LINE_CHANNEL_SECRET = os.getenv("LINE_CHANNEL_SECRET")
 
-if not LINE_CHANNEL_ACCESS_TOKEN or not LINE_CHANNEL_SECRET:
-    raise ValueError("LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET must be set")
+# LINE Bot API初期化（環境変数が無い場合は後でエラーを返す）
+line_bot_api = None
+handler = None
 
-line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
-handler = WebhookHandler(LINE_CHANNEL_SECRET)
+if LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET:
+    try:
+        line_bot_api = LineBotApi(LINE_CHANNEL_ACCESS_TOKEN)
+        handler = WebhookHandler(LINE_CHANNEL_SECRET)
+        print("[INFO] LINE Bot API initialized successfully")
+    except Exception as e:
+        print(f"[WARN] Failed to initialize LINE Bot API: {e}")
+else:
+    print("[WARN] LINE_CHANNEL_ACCESS_TOKEN or LINE_CHANNEL_SECRET not set. LINE features will be disabled.")
 
 # 許可されたコマンド（安全のため）
 ALLOWED_COMMANDS = {
@@ -153,31 +162,43 @@ def update_events() -> str:
 @app.route("/callback", methods=["POST"])
 def callback():
     """LINE Webhook"""
+    if not handler:
+        print("[ERROR] LINE handler not initialized. Check LINE_CHANNEL_SECRET.")
+        abort(503)
+    
     signature = request.headers.get("X-Line-Signature")
     body = request.get_data(as_text=True)
     
     try:
         handler.handle(body, signature)
     except InvalidSignatureError:
+        print("[ERROR] Invalid LINE signature")
         abort(400)
+    except Exception as e:
+        print(f"[ERROR] LINE webhook error: {e}")
+        abort(500)
     
     return "OK"
 
 
-@handler.add(MessageEvent, message=TextMessage)
 def handle_message(event):
     """メッセージハンドラー"""
-    text = event.message.text.strip()
+    if not line_bot_api:
+        print("[ERROR] LINE Bot API not initialized. Cannot handle message.")
+        return
     
-    # コマンド判定
-    cmd = None
-    for key, value in ALLOWED_COMMANDS.items():
-        if key in text:
-            cmd = value
-            break
-    
-    if cmd == "help":
-        help_text = """📋 利用可能なコマンド
+    try:
+        text = event.message.text.strip()
+        
+        # コマンド判定
+        cmd = None
+        for key, value in ALLOWED_COMMANDS.items():
+            if key in text:
+                cmd = value
+                break
+        
+        if cmd == "help":
+            help_text = """📋 利用可能なコマンド
 
 • 分析 - USDJPYの最新分析結果を表示
 • 予測 - 売買予測を表示
@@ -185,43 +206,85 @@ def handle_message(event):
 • イベント更新 - 経済指標・要人発言を更新
 
 例: 「分析」「データ更新して」"""
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
-        return
-    
-    if cmd == "analyze":
-        result = analyze_usdjpy()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
-        return
-    
-    if cmd == "predict":
-        # 予測機能（簡易版）
-        result = analyze_usdjpy() + "\n\n💹 予測: 分析結果を確認してください"
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
-        return
-    
-    if cmd == "update_data":
-        result = update_data()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
-        return
-    
-    if cmd == "update_events":
-        result = update_events()
-        line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
-        return
-    
-    # デフォルト
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text="コマンドが認識できませんでした。「ヘルプ」と送ってください。")
-    )
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
+            return
+        
+        if cmd == "analyze":
+            result = analyze_usdjpy()
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
+            return
+        
+        if cmd == "predict":
+            # 予測機能（簡易版）
+            result = analyze_usdjpy() + "\n\n💹 予測: 分析結果を確認してください"
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
+            return
+        
+        if cmd == "update_data":
+            result = update_data()
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
+            return
+        
+        if cmd == "update_events":
+            result = update_events()
+            line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
+            return
+        
+        # デフォルト
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="コマンドが認識できませんでした。「ヘルプ」と送ってください。")
+        )
+    except Exception as e:
+        print(f"[ERROR] Error handling LINE message: {e}")
+        if line_bot_api:
+            try:
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="エラーが発生しました。しばらくしてから再度お試しください。")
+                )
+            except Exception as reply_error:
+                print(f"[ERROR] Failed to send error reply: {reply_error}")
 
 
 @app.route("/health", methods=["GET"])
 def health():
-    """ヘルスチェック"""
-    return {"status": "ok", "timestamp": datetime.now(timezone.utc).isoformat()}
+    """ヘルスチェック - 200を返す"""
+    from flask import jsonify
+    return jsonify({
+        "status": "ok",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }), 200
+
+
+# LINE handler登録（初期化済みの場合のみ）
+if handler and line_bot_api:
+    try:
+        handler.add(MessageEvent, message=TextMessage)(handle_message)
+        print("[INFO] LINE message handler registered successfully")
+    except Exception as e:
+        print(f"[ERROR] Failed to register LINE handler: {e}")
+else:
+    print("[WARN] LINE handler not registered. Set LINE_CHANNEL_ACCESS_TOKEN and LINE_CHANNEL_SECRET to enable LINE features.")
+
+
+@app.route("/", methods=["GET"])
+def index():
+    """ルートエンドポイント"""
+    return {
+        "service": "FX Analysis Agent with LINE Bot",
+        "status": "running",
+        "endpoints": {
+            "/health": "Health check",
+            "/callback": "LINE Webhook (POST)",
+            "/": "This page"
+        },
+        "line_enabled": line_bot_api is not None
+    }
 
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
+    print(f"[INFO] Starting server on port {port}")
+    print(f"[INFO] Health check: http://localhost:{port}/health")
     app.run(host="0.0.0.0", port=port, debug=False)
