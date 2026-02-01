@@ -24,16 +24,23 @@ train_model
 
 ### 2. コマンドラインから実行
 
+**重要**: Macでは `python3` を使用してください。
+
 ```bash
+# 仮想環境をアクティベート（推奨）
+source venv/bin/activate
+
 # 自動判定で学習（必要時のみ）
-python jobs/auto_train_model.py --pair USDJPY
+python3 jobs/auto_train_model.py --pair USDJPY
 
 # 強制学習（判定をスキップ）
-python jobs/auto_train_model.py --pair USDJPY --force
+python3 jobs/auto_train_model.py --pair USDJPY --force
 
 # 再学習判定の最小日数を変更（デフォルト: 7日）
-python jobs/auto_train_model.py --pair USDJPY --min-days 3
+python3 jobs/auto_train_model.py --pair USDJPY --min-days 3
 ```
+
+**注意**: コメント行（`#` で始まる行）は実行しないでください。コマンドのみをコピー&ペーストしてください。
 
 ### 3. 定期自動実行（Mac: launchd）
 
