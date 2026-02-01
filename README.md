@@ -137,6 +137,8 @@ Renderの **Environment** タブで以下を設定：
 |-----|-------|------|------|
 | `LINE_CHANNEL_ACCESS_TOKEN` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのアクセストークン |
 | `LINE_CHANNEL_SECRET` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのシークレット |
+| `NATIVE_AI_URL` | （あなたのAI API URL） | オプション | ネイティブAIのHTTP API URL |
+| `NATIVE_AI_API_KEY` | （APIキー） | オプション | ネイティブAIの認証キー（必要な場合） |
 | `TE_API_KEY` | `guest:guest` | オプション | TradingEconomics APIキー |
 
 **環境変数の設定方法**:
@@ -239,6 +241,7 @@ Renderの **Environment** タブで以下を設定：
 - **分析結果表示**: 最新のテクニカル・イベント状況を表示
 - **データ更新**: LINEからデータ取得を実行
 - **予測表示**: 売買判断の提案
+- **ネイティブAI連携**: OpenAI不使用、あなたのHTTP APIを呼び出し（`NATIVE_AI_URL`設定時）
 
 ## 動作確認
 

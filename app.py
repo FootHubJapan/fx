@@ -12,6 +12,14 @@ from linebot.exceptions import InvalidSignatureError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from dotenv import load_dotenv
 
+# ネイティブAI呼び出しモジュール
+try:
+    from native_ai import call_native_ai, call_native_ai_with_fx_context
+    NATIVE_AI_AVAILABLE = True
+except ImportError:
+    NATIVE_AI_AVAILABLE = False
+    print("[WARN] native_ai module not found. Native AI features will be disabled.")
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -205,7 +213,9 @@ def handle_message(event):
 • データ更新 - Dukascopyから最新データを取得
 • イベント更新 - 経済指標・要人発言を更新
 
-例: 「分析」「データ更新して」"""
+例: 「分析」「データ更新して」
+
+💡 その他のメッセージはネイティブAIが回答します"""
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=help_text))
             return
         
@@ -230,7 +240,52 @@ def handle_message(event):
             line_bot_api.reply_message(event.reply_token, TextSendMessage(text=result))
             return
         
-        # デフォルト
+        # コマンドが一致しない場合: ネイティブAIに投げる
+        if NATIVE_AI_AVAILABLE and os.getenv("NATIVE_AI_URL"):
+            try:
+                # context に何を入れるか（必要に応じてカスタマイズ）
+                # 例: ユーザーID、通貨ペア固定文、簡易プロフィール、直近の分析結果など
+                context = None
+                
+                # オプション: FX分析データをcontextに含める場合
+                # try:
+                #     features_path = Path("data/features/USDJPY/M5_features.parquet")
+                #     if features_path.exists():
+                #         import pandas as pd
+                #         df = pd.read_parquet(features_path)
+                #         latest = df.iloc[-1] if not df.empty else None
+                #         if latest is not None:
+                #             context = f"FX分析コンテキスト: RSI={latest.get('rsi_14', 'N/A')}, ATR={latest.get('atr_14', 'N/A')}"
+                # except Exception:
+                #     pass  # FXデータ取得失敗は無視
+                
+                # ネイティブAIを呼び出す
+                ai_reply = call_native_ai(text, context=context)
+                
+                # エラー時の処理: A) エラーメッセージをそのまま返す（現在の実装）
+                # B) 一般化したメッセージにしたい場合は以下をコメントアウトして、下のB案を使用
+                line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
+                
+                # B案: エラーを一般化する場合（コメントアウト解除して使用）
+                # if ai_reply.startswith("⚠️") or "失敗" in ai_reply or "エラー" in ai_reply:
+                #     line_bot_api.reply_message(
+                #         event.reply_token,
+                #         TextSendMessage(text="申し訳ございません。現在AIが混み合っております。しばらくしてから再度お試しください。")
+                #     )
+                # else:
+                #     line_bot_api.reply_message(event.reply_token, TextSendMessage(text=ai_reply))
+                
+                return
+            except Exception as e:
+                print(f"[ERROR] Native AI call failed: {e}")
+                # フォールバック: デフォルトメッセージ
+                line_bot_api.reply_message(
+                    event.reply_token,
+                    TextSendMessage(text="⚠️ AI応答の取得に失敗しました。コマンド（例: 「ヘルプ」）を試してください。")
+                )
+                return
+        
+        # デフォルト（ネイティブAI未設定の場合）
         line_bot_api.reply_message(
             event.reply_token,
             TextSendMessage(text="コマンドが認識できませんでした。「ヘルプ」と送ってください。")
@@ -279,7 +334,8 @@ def index():
             "/callback": "LINE Webhook (POST)",
             "/": "This page"
         },
-        "line_enabled": line_bot_api is not None
+        "line_enabled": line_bot_api is not None,
+        "native_ai_enabled": NATIVE_AI_AVAILABLE and bool(os.getenv("NATIVE_AI_URL"))
     }
 
 
