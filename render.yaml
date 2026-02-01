@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: fx-analysis-line-bot
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT
+    envVars:
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: TE_API_KEY
+        value: guest:guest
+      - key: PYTHON_VERSION
+        value: 3.11.0
