@@ -15,20 +15,62 @@ USDJPYを中心としたFX分析システムとLINEボット連携。
 ### 1. 依存関係のインストール
 
 ```bash
+# Python 3.11以上が必要
+python3 --version
+
+# 仮想環境作成（推奨）
+python3 -m venv venv
+source venv/bin/activate  # Mac/Linux
+# または
+venv\Scripts\activate  # Windows
+
+# 依存関係インストール
 pip install -r requirements.txt
 ```
 
 ### 2. 環境変数の設定
 
-`.env`ファイルを作成：
+`.env`ファイルを作成（`.env.example`をコピー）：
 
 ```bash
-LINE_CHANNEL_ACCESS_TOKEN=your_line_token
-LINE_CHANNEL_SECRET=your_line_secret
-TE_API_KEY=your_tradingeconomics_key  # オプション（guest:guestでも可）
+cp .env.example .env
 ```
 
-### 3. ローカル実行
+`.env`ファイルを編集：
+
+```bash
+# LINE Bot設定（必須）
+LINE_CHANNEL_ACCESS_TOKEN=your_line_channel_access_token_here
+LINE_CHANNEL_SECRET=your_line_channel_secret_here
+
+# TradingEconomics API（オプション、guest:guestでも可）
+TE_API_KEY=guest:guest
+
+# ポート（ローカル開発時のみ、Renderでは自動設定）
+PORT=5000
+```
+
+**LINE Bot設定の取得方法**:
+1. [LINE Developers Console](https://developers.line.biz/console/) にログイン
+2. プロバイダーを作成
+3. チャネルを作成（Messaging API）
+4. Channel Access Token と Channel Secret をコピー
+
+### 3. ローカル起動
+
+#### 3-1. アプリケーション起動
+
+```bash
+python app.py
+```
+
+起動確認：
+- ブラウザで `http://localhost:5000/health` にアクセス
+- `{"status": "ok", "timestamp": "..."}` が返ればOK
+
+#### 3-2. データ処理ジョブ（オプション）
+
+データ分析機能を使う場合は、以下のジョブを実行：
 
 ```bash
 # データ取得（1日分）
@@ -48,19 +90,112 @@ python jobs/fetch_rss_events.py --events-cache data/events/events_cache.parquet
 python jobs/build_features.py --bars data/bars/USDJPY/tf=M5/all.parquet --out data/features/USDJPY/M5_features.parquet --events-cache data/events/events_cache.parquet
 ```
 
-### 4. LINEボット起動
-
-```bash
-python app.py
-```
-
 ## Renderデプロイ
 
-1. GitHubリポジトリにpush
-2. RenderでNew Web Serviceを作成
-3. リポジトリを選択
-4. 環境変数を設定（LINE_CHANNEL_ACCESS_TOKEN等）
-5. Deploy
+### Render設定方針
+
+このプロジェクトは **`render.yaml` を使用した自動設定** を推奨します。
+
+- **起動方式**: `gunicorn` でWSGIサーバーとして起動
+- **ポート**: Renderが自動設定する `$PORT` 環境変数を使用
+- **ホスト**: `0.0.0.0` でバインド（外部アクセス可能）
+- **ヘルスチェック**: `/health` エンドポイントを使用
+- **Pythonバージョン**: 3.11.0（`runtime.txt`で指定）
+
+### 前提条件
+
+- GitHubアカウント
+- Renderアカウント（[render.com](https://render.com)で無料登録可能）
+- LINE Developersアカウント（LINE Bot機能を使う場合）
+
+### デプロイ手順
+
+#### 1. GitHubリポジトリにpush
+
+```bash
+git add .
+git commit -m "feat: Render deploy support"
+git push origin main
+```
+
+#### 2. RenderでWeb Serviceを作成
+
+1. [Render Dashboard](https://dashboard.render.com/) にログイン
+2. **New +** → **Web Service** を選択
+3. GitHubリポジトリを選択（または **Connect GitHub** で連携）
+4. **Apply render.yaml** を選択（推奨）
+   - これにより `render.yaml` の設定が自動適用されます
+   - 手動設定する場合は以下を入力：
+     - **Build Command**: `pip install -r requirements.txt`
+     - **Start Command**: `gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120`
+
+#### 3. 環境変数の設定
+
+Renderの **Environment** タブで以下を設定：
+
+| Key | Value | 必須 | 説明 |
+|-----|-------|------|------|
+| `LINE_CHANNEL_ACCESS_TOKEN` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのアクセストークン |
+| `LINE_CHANNEL_SECRET` | （LINE Developersから取得） | LINE Bot使用時 | LINE Botのシークレット |
+| `TE_API_KEY` | `guest:guest` | オプション | TradingEconomics APIキー |
+
+**環境変数の設定方法**:
+1. Renderのサービス画面で **Environment** タブを開く
+2. **Add Environment Variable** をクリック
+3. Key と Value を入力して保存
+
+> **Note**: LINE Botを使わない場合でも、`/health` エンドポイントは動作します。
+
+#### 4. LINE Webhook設定（LINE Botを使う場合）
+
+1. [LINE Developers Console](https://developers.line.biz/console/) でチャネルを開く
+2. **Messaging API** タブ → **Webhook URL** に以下を設定：
+   ```
+   https://your-app-name.onrender.com/callback
+   ```
+   （`your-app-name` は Renderで設定したサービス名）
+3. **Webhook** を有効化（**Use webhook** をON）
+4. **Verify** ボタンで接続確認
+
+#### 5. デプロイ実行
+
+- **Manual Deploy** → **Deploy latest commit** をクリック
+- または、GitHubにpushすると自動デプロイされます
+
+#### 6. 動作確認
+
+**ヘルスチェックURL**: `https://your-app-name.onrender.com/health`
+
+期待されるレスポンス（200 OK）:
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-02-01T12:00:00.000000+00:00"
+}
+```
+
+**ルートエンドポイント**: `https://your-app-name.onrender.com/`
+- サービス情報とLINE Botの有効/無効状態が表示されます
+
+### トラブルシューティング
+
+#### ビルドエラー
+
+- **ログ確認**: Renderの **Logs** タブでエラー内容を確認
+- **Pythonバージョン**: `runtime.txt` で3.11.0を指定済み
+- **依存関係**: `requirements.txt` のパッケージ名・バージョンを確認
+
+#### 起動エラー
+
+- **環境変数**: LINE_CHANNEL_ACCESS_TOKEN と LINE_CHANNEL_SECRET が設定されているか確認
+- **ポート**: `$PORT` 環境変数が自動設定されているか確認（Renderが自動設定）
+- **ログ**: Renderの **Logs** タブで起動ログを確認
+
+#### LINE Webhookエラー
+
+- **URL確認**: Webhook URLが正しいか（`/callback` が含まれているか）
+- **SSL証明書**: Renderは自動でHTTPS証明書を発行（数分かかる場合あり）
+- **チャネル設定**: LINE DevelopersでWebhookが有効になっているか確認
 
 ## ディレクトリ構造
 
@@ -104,6 +239,54 @@ python app.py
 - **分析結果表示**: 最新のテクニカル・イベント状況を表示
 - **データ更新**: LINEからデータ取得を実行
 - **予測表示**: 売買判断の提案
+
+## 動作確認
+
+### ローカル環境
+
+1. **アプリケーション起動**:
+   ```bash
+   python app.py
+   ```
+   起動ログに以下が表示されます:
+   ```
+   [INFO] Starting server on port 5000
+   [INFO] Health check: http://localhost:5000/health
+   ```
+
+2. **ヘルスチェック**:
+   ```bash
+   curl http://localhost:5000/health
+   ```
+   またはブラウザで `http://localhost:5000/health` にアクセス
+   
+   期待されるレスポンス（200 OK）:
+   ```json
+   {
+     "status": "ok",
+     "timestamp": "2025-02-01T12:00:00.000000+00:00"
+   }
+   ```
+
+3. **ルートエンドポイント確認**:
+   ```bash
+   curl http://localhost:5000/
+   ```
+
+### Render環境
+
+**ヘルスチェックURL**: `https://your-app-name.onrender.com/health`
+
+期待されるレスポンス（200 OK）:
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-02-01T12:00:00.000000+00:00"
+}
+```
+
+**ルートエンドポイント**: `https://your-app-name.onrender.com/`
+- サービス情報とLINE Botの有効/無効状態が表示されます
 
 ## 次のステップ
 
